@@ -63,6 +63,7 @@ os.remove(filename)
 # Clean text using ftfy
 text = ftfy.fix_text(text)
 text = ftfy.fix_encoding(text)
+print(text)
 
 # Write the OCR result to a text file
 with open('outputbase.txt', 'w', encoding='utf-8') as text_output:
@@ -98,7 +99,21 @@ data = {
     'Gender': gender,
     'Aadhar': adhar
 }
+def classify_document(text):
 
+    if re.search(r"\d{4} \d{4} \d{4}", text):
+        return "Aadhaar"
+    elif re.search(r"[A-Z]{5}\d{4}[A-Z]", text):
+        return "PAN"
+    elif re.search(r"[A-Z]\d{7}", text):
+        return "Passport"
+    else:
+        return "Unknown"
+
+    # Example usage
+
+document_type = classify_document(text)
+print(f"Document type: {document_type}")
 # Write the data to a JSON file
 with io.open('data.json', 'w', encoding='utf-8') as outfile:
     json.dump(data, outfile, ensure_ascii=False, indent=4)

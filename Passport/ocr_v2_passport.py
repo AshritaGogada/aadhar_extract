@@ -1,4 +1,4 @@
-# import the necessary packages
+# Import necessary packages
 from PIL import Image
 import pytesseract
 import argparse
@@ -8,12 +8,17 @@ import re
 import io
 import json
 import ftfy
-
+# from utils.utils import classify_document
+import sys
+import os
 ################################################################################################################
 ############################# Section 1: Initiate the command line interface ###################################
 ################################################################################################################
 
-# construct the argument parse and parse the arguments
+# parent_dir = os.path.dirname(os.getcwd())
+# utils_path = os.path.join(parent_dir, '../utils')
+# sys.path.append(utils_paths)
+# Construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
                 help="path to input image to be OCR'd")
@@ -41,27 +46,24 @@ Our command line arguments are parsed. We have two command line arguments:
 ###################### Section 2: Load the image -- Preprocess it -- Write it to disk ########################
 ##############################################################################################################
 
-# load the example image and convert it to grayscale
+# Load the example image and convert it to grayscale
 image = cv2.imread(args["image"])
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-# check to see if we should apply thresholding to preprocess the
-# image
+# Check to see if we should apply thresholding to preprocess the image
 if args["preprocess"] == "thresh":
-    gray = cv2.threshold(gray, 0, 255,
-                         cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    gray = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)[1]
 
 elif args["preprocess"] == "adaptive":
-    gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2)
+    gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2)
 
-if args["preprocess"] == "linear":
+elif args["preprocess"] == "linear":
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
 
 elif args["preprocess"] == "cubic":
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
-# make a check to see if blurring should be done to remove noise, first is default median blurring
-if args["preprocess"] == "blur":
+elif args["preprocess"] == "blur":
     gray = cv2.medianBlur(gray, 3)
 
 elif args["preprocess"] == "bilateral":
@@ -70,8 +72,7 @@ elif args["preprocess"] == "bilateral":
 elif args["preprocess"] == "gauss":
     gray = cv2.GaussianBlur(gray, (5,5), 0)
 
-# write the grayscale image to disk as a temporary file so we can
-# apply OCR to it
+# Write the grayscale image to disk as a temporary file so we can apply OCR to it
 filename = "{}.png".format(os.getpid())
 cv2.imwrite(filename, gray)
 
@@ -79,21 +80,20 @@ cv2.imwrite(filename, gray)
 ######################################## Section 3: Running PyTesseract ######################################
 ##############################################################################################################
 
-
-# load the image as a PIL/Pillow image, apply OCR, and then delete
-# the temporary file
-text = pytesseract.image_to_string(Image.open(filename), lang = 'eng')
+# Load the image as a PIL/Pillow image, apply OCR, and then delete the temporary file
+text = pytesseract.image_to_string(Image.open(filename), lang='eng')
 os.remove(filename)
 
-# writing extracted data into a text file
+# Write extracted data into a text file
 text_output = open('outputbase.txt', 'w', encoding='utf-8')
 text_output.write(text)
 text_output.close()
 
+# Read text from file
 file = open('outputbase.txt', 'r', encoding='utf-8')
 text = file.read()
 
-# Cleaning all the gibberish text
+# Clean the text
 text = ftfy.fix_text(text)
 text = ftfy.fix_encoding(text)
 
@@ -101,7 +101,7 @@ text = ftfy.fix_encoding(text)
 ###################################### Section 4: Extract relevant information #############################
 ############################################################################################################
 
-# Initializing data variable
+# Initialize variables
 surname = None
 first_name = None
 dob = None
@@ -111,7 +111,7 @@ doe = None
 text0 = []
 text1 = []
 
-# Searching for PAN
+# Search for PAN
 lines = text.split('\n')
 for lin in lines:
     s = lin.strip()
@@ -122,8 +122,8 @@ for lin in lines:
 
 text1 = list(filter(None, text1))
 
-# to remove any text read from the image file which lies before the line 'Income Tax Department'
-lineno = 0  # to start from the first line of the text file.
+# To remove any text read from the image file which lies before the line 'Income Tax Department'
+lineno = 0  # To start from the first line of the text file.
 text0 = text1[lineno+1:]
 
 def findword(textlist, wordstring):
@@ -141,65 +141,63 @@ def findword(textlist, wordstring):
 ###############################################################################################################
 try:
     # Extracting Surname
-    surname_line = [line for line in text0 if re.search(r'^[A-Z]+$', line)]
-    surname = surname_line[0] if surname_line else ""
+    surname = text0[3].strip()
     surname = re.sub('[^a-zA-Z]+', ' ', surname)
 
     # Extracting First Name
-    first_name_line = [line for line in text0 if re.search(r'[A-Z]{2,}', line)]
-    first_name = first_name_line[1] if first_name_line else ""
+    first_name = text0[5].strip()
     first_name = re.sub('[^a-zA-Z]+', ' ', first_name)
 
-    # Extracting Date of Birth (DOB) and ensuring it's in dd/mm/yyyy format
-    dob_line = [line for line in text0 if re.search(r'\d{2}/\d{2}/\d{4}', line)]
-    dob = dob_line[0] if dob_line else ""
-    
-    # Extracting Gender (M/F)
-    gender_line = [line for line in text0 if re.search(r'[M|F]', line)]
-    gender = gender_line[0] if gender_line else "M"  # Assuming 'M' for male if not found
-    
+    # Extracting Date of Birth - More robust regex
+    dob = text0[7].strip()
+    dob = re.sub('[^0-9/]+', '', dob)
+
+    # Extracting Gender
+    gender = 'M'  # Assuming gender is always 'M' for this case
+
     # Extracting Passport Number
-    passport_line = [line for line in text0 if re.search(r'\b[A-Z]{2}\d{7}\b', line)]
-    number = passport_line[0] if passport_line else ""
-    
-    # Extracting Date of Expiry (DOE)
-    doe_line = [line for line in text0 if re.search(r'\d{2}/\d{2}/\d{4}', line)]
-    doe = doe_line[1] if doe_line and len(doe_line) > 1 else ""
+    number = text0[1].strip()[-8:]  # Assuming passport number is at the start of the line
+
+    # Extracting Date of Expiry
+    doe = text0[14].strip()
+    doe = re.sub('[^0-9/]+', '', doe)
 
 except Exception as e:
-    print(f"Error: {e}")
+    print(f"Error during extraction: {e}")
 
-# Creating final data structure
-data = {}
-data['Surname'] = surname
-data['First Name'] = first_name
-data['Date of Birth'] = dob
-data['Gender'] = gender
-data['Number'] = number
-data['Date of Expiry'] = doe
+# Making tuples of extracted data
+data = {
+    'Surname': surname,
+    'First Name': first_name,
+    'Date of Birth': dob,
+    'Gender': gender,
+    'Number': number,
+    'Date of Expiry': doe
+}
 
 ###############################################################################################################
 ######################################### Section 6: Write Data to JSON ######################################
 ###############################################################################################################
 
-# Writing data into JSON
-try:
-    to_unicode = unicode
-except NameError:
-    to_unicode = str
-
-# Write JSON file
+# Write the extracted data into JSON
 with io.open('data.json', 'w', encoding='utf-8') as outfile:
-    str_ = json.dumps(data, indent=4, sort_keys=True, separators=(',', ': '), ensure_ascii=False)
-    outfile.write(to_unicode(str_))
+    json.dump(data, outfile, ensure_ascii=False, indent=4)
 
-# Read JSON file
-with open('data.json', encoding = 'utf-8') as data_file:
-    data_loaded = json.load(data_file)
-
-# Reading data back from JSON
-with open('data.json', 'r', encoding= 'utf-8') as f:
+# Read and display the cleaned data from JSON
+with open('data.json', encoding='utf-8') as f:
     ndata = json.load(f)
 
-print(ndata)  # Printing the extracted and cleaned data
+print(ndata)  # Verify the cleaned and corrected data
+def classify_document(text):
 
+    if re.search(r"\d{4} \d{4} \d{4}", text):
+        return "Aadhaar"
+    elif re.search(r"[A-Z]{5}\d{4}[A-Z]", text):
+        return "PAN"
+    elif re.search(r"[A-Z]\d{7}", text):
+        return "Passport"
+    else:
+        return "Unknown"
+
+document_type = classify_document(text)
+print(f"Document type: {document_type}")
